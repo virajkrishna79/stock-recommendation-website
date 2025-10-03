@@ -29,7 +29,7 @@ const AboutPage = () => {
               <div>
                 <h3 className="text-xl font-semibold text-gray-900 mb-3">What We Do</h3>
                 <p className="text-gray-600 mb-4">
-                  StockAI analyzes thousands of data points including technical indicators, market sentiment, news analysis, and price patterns to generate intelligent stock recommendations.
+                  Equibull analyzes thousands of data points including technical indicators, market sentiment, news analysis, and price patterns to generate intelligent stock recommendations.
                 </p>
                 <p className="text-gray-600">
                   Our system continuously learns and adapts to market conditions, ensuring our recommendations remain relevant and accurate.
