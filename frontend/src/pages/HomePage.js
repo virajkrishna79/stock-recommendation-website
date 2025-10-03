@@ -63,7 +63,7 @@ const HomePage = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              Why Choose StockAI?
+              Why Choose Equibull?
             </h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
               Our advanced system combines multiple data sources and AI algorithms to provide you with the most accurate stock recommendations
@@ -163,7 +163,7 @@ const HomePage = () => {
             Ready to Make Smarter Investment Decisions?
           </h2>
           <p className="text-xl text-gray-300 mb-8 max-w-2xl mx-auto">
-            Join thousands of investors who trust StockAI for their daily stock analysis and recommendations
+            Join thousands of investors who trust Equibull for their daily stock analysis and recommendations
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
