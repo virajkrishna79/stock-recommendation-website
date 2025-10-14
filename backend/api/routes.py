@@ -1,10 +1,9 @@
-from flask import Blueprint, request, jsonify, render_template
+from flask import Blueprint, request, jsonify, render_template, current_app
 from models import User, StockRecommendation, NewsArticle
 from services.stock_service import StockService
 from services.news_service import NewsService
 from services.recommendation_service import RecommendationService
 from services.email_service import EmailService
-from app import db
 import logging
 
 # Configure logging
@@ -20,6 +19,12 @@ stock_service = StockService()
 news_service = NewsService()
 recommendation_service = RecommendationService()
 email_service = EmailService()
+
+def get_db():
+    """Get database instance without circular imports"""
+    from flask import current_app
+    from flask_sqlalchemy import SQLAlchemy
+    return current_app.extensions['sqlalchemy'].db
 
 @main_bp.route('/')
 def index():
@@ -46,6 +51,9 @@ def subscribe():
         
         if not email:
             return jsonify({'error': 'Email is required'}), 400
+        
+        # Get db instance
+        db = get_db()
         
         # Check if user already exists
         existing_user = User.query.filter_by(email=email).first()
@@ -85,6 +93,9 @@ def unsubscribe():
         if not email:
             return jsonify({'error': 'Email is required'}), 400
         
+        # Get db instance
+        db = get_db()
+        
         user = User.query.filter_by(email=email).first()
         if user:
             user.is_active = False
@@ -98,7 +109,6 @@ def unsubscribe():
         db.session.rollback()
         return jsonify({'error': 'Internal server error'}), 500
 
-# ==== KEEP THIS ENHANCED NEWS ROUTE ====
 @api_bp.route('/news', methods=['GET'])
 def get_news():
     """Get latest financial news - API endpoint"""
