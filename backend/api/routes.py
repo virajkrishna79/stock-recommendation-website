@@ -98,16 +98,27 @@ def unsubscribe():
         db.session.rollback()
         return jsonify({'error': 'Internal server error'}), 500
 
+# ==== KEEP THIS ENHANCED NEWS ROUTE ====
 @api_bp.route('/news', methods=['GET'])
 def get_news():
-    """Get latest market news"""
+    """Get latest financial news - API endpoint"""
     try:
-        limit = request.args.get('limit', 10, type=int)
-        news = news_service.get_latest_news(limit=limit)
-        return jsonify({'news': news})
+        category = request.args.get('category', 'latest')
+        limit = int(request.args.get('limit', 15))
+        
+        news = news_service.get_news(category=category, limit=limit)
+        
+        return jsonify({
+            'success': True,
+            'news': news,
+            'count': len(news)
+        })
     except Exception as e:
         logger.error(f"Error fetching news: {e}")
-        return jsonify({'error': 'Failed to fetch news'}), 500
+        return jsonify({
+            'success': False,
+            'error': 'Failed to fetch news'
+        }), 500
 
 @api_bp.route('/recommendations', methods=['GET'])
 def get_recommendations():
@@ -144,27 +155,6 @@ def get_stock_data(symbol):
 def health_check():
     """Health check endpoint"""
     return jsonify({'status': 'healthy', 'service': 'stock-recommendation-api'})
-
-@api_bp.route('/news', methods=['GET'])
-def get_news():
-    """Get latest financial news - API endpoint"""
-    try:
-        category = request.args.get('category', 'latest')
-        limit = int(request.args.get('limit', 15))
-        
-        news = news_service.get_news(category=category, limit=limit)
-        
-        return jsonify({
-            'success': True,
-            'news': news,
-            'count': len(news)
-        })
-    except Exception as e:
-        logger.error(f"Error fetching news: {e}")
-        return jsonify({
-            'success': False,
-            'error': 'Failed to fetch news'
-        }), 500
 
 @api_bp.route('/news/markets', methods=['GET'])
 def get_market_news():
