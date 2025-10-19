@@ -27,8 +27,8 @@ export const fetchNews = async (limit = 10) => {
   }
 };
 
-export const subscribeToNewsLetter = async (email) => {
-  console.log('subscribeToNewsLetter called with email:', email);
+export const subscribeToNewsetter = async (email) => {
+  console.log('subscribeToNewsletter called with email:', email);
   
   try {
     const backendUrl = 'https://stock-recommendation-website-production.up.railway.app';
