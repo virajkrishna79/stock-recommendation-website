@@ -27,7 +27,7 @@ export const fetchNews = async (limit = 10) => {
   }
 };
 
-export const subscribeToNewsetter = async (email) => {
+export const subscribeToNewsletter = async (email) => {
   console.log('subscribeToNewsletter called with email:', email);
   
   try {
@@ -58,7 +58,7 @@ export const subscribeToNewsetter = async (email) => {
       throw new Error(data.error || 'Failed to subscribe to newsletter');
     }
   } catch (error) {
-    console.error('Error in subscribeToNewsLetter:', error);
+    console.error('Error in subscribeToNewsletter:', error);
     throw error;
   }
-};add other API functions here later as needed
+};
