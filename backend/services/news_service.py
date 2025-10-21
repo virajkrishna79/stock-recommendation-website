@@ -24,12 +24,12 @@ class NewsService:
         self.cache_time = None
         self.cache_duration = 1800  # 30 minutes cache
     
-    def get_latest_news(self, limit=15):
+    def get_latest_news(self, limit=15, force=False):
         """Get fresh news from reliable sources"""
         current_time = time.time()
         
         # Return cached news if still valid
-        if (self.cache_time and 
+        if (not force and self.cache_time and 
             current_time - self.cache_time < self.cache_duration and 
             'news' in self.cache):
             print("Returning cached news")

@@ -17,7 +17,17 @@ export const fetchNews = async (limit = 10) => {
     
     if (data.success) {
       console.log('News count:', data.news.length);
-      return data.news;
+      // Normalize fields for UI components like NewsCard
+      const normalized = (data.news || []).map((n) => ({
+        title: n.title || n.headline || '',
+        description: n.description || n.summary || '',
+        url: n.url || n.link || '#',
+        source: n.source || 'Financial News',
+        published_at: n.published_at || n.published || new Date().toISOString(),
+        sentiment_score: n.sentiment_score ?? null,
+        sentiment_label: n.sentiment_label || 'neutral',
+      }));
+      return normalized;
     } else {
       throw new Error(data.error || 'Failed to fetch news');
     }
