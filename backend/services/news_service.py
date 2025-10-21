@@ -1,168 +1,222 @@
-import feedparser
+import os
 import requests
-from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
-import json
 import time
+import feedparser
 
 class NewsService:
     def __init__(self):
-        self.rss_feeds = {
-            'latest': 'https://www.moneycontrol.com/rss/latestnews.xml',
-            'business': 'https://www.moneycontrol.com/rss/business.xml',
-            'markets': 'https://www.moneycontrol.com/rss/mcmarkets.xml',
-            'tech': 'https://www.moneycontrol.com/rss/technology.xml',
-            # New fallback sources
-            'yahoo_finance': 'https://finance.yahoo.com/news/rssindex',
-            'investing': 'https://news.google.com/rss/search?q=stocks+market+investing&hl=en-US&gl=US&ceid=US:en'
-        }
+        self.newsapi_key = os.getenv('NEWS_API_KEY', 'c9e369d1f1b34b6e9b4014f2fde08a2f')
+        self.use_newsapi = bool(self.newsapi_key)
+        
+        # Fallback RSS feeds
+        self.fallback_feeds = [
+            'https://feeds.finance.yahoo.com/rss/2.0/headline?s=%5EGSPC,%5EDJI,%5EIXIC,AAPL,MSFT,GOOGL&region=US&lang=en-US',
+            'https://www.investing.com/rss/news_25.rss',
+            'https://feeds.content.dowjones.io/public/rss/mw_business'
+        ]
+        
+        self.cache = {}
+        self.cache_time = None
+        self.cache_duration = 1800  # 30 minutes cache
     
-    def get_latest_news(self, limit=10):
-        """For the homepage - existing method expected by routes"""
-        return self.get_news('latest', limit)
-    
-    def get_news(self, category='latest', limit=15):
-        """Get news from RSS feeds - UPDATED with fallback"""
+    def get_latest_news(self, limit=15):
+        """Get fresh news using NewsAPI with RSS fallback"""
+        current_time = time.time()
+        
+        # Return cached news if still valid
+        if (self.cache_time and 
+            current_time - self.cache_time < self.cache_duration and 
+            'news' in self.cache):
+            return self.cache['news'][:limit]
+        
         try:
-            # First try MoneyControl as before
-            moneycontrol_news = self._get_moneycontrol_news(category, limit)
+            # Try NewsAPI first (paid, fresh news)
+            if self.use_newsapi:
+                newsapi_news = self._get_newsapi_news(limit)
+                if newsapi_news:
+                    self.cache['news'] = newsapi_news
+                    self.cache_time = current_time
+                    return newsapi_news[:limit]
             
-            # If we got good results, return them
-            if moneycontrol_news and self._is_recent_news(moneycontrol_news):
-                return moneycontrol_news
+            # Fallback to RSS feeds
+            rss_news = self._get_rss_news(limit)
+            if rss_news:
+                self.cache['news'] = rss_news
+                self.cache_time = current_time
+                return rss_news[:limit]
             
-            # If MoneyControl fails or has old news, try fallback
-            print(f"MoneyControl news outdated or empty, trying fallback sources...")
-            fallback_news = self._get_fallback_news(limit)
-            
-            # Combine and deduplicate
-            all_news = moneycontrol_news + fallback_news
-            unique_news = self._remove_duplicates(all_news)
-            
-            return unique_news[:limit]
+            # Final fallback
+            fallback_news = self._get_fallback_news()
+            self.cache['news'] = fallback_news
+            self.cache_time = current_time
+            return fallback_news[:limit]
             
         except Exception as e:
-            print(f"Error in get_news: {e}, using fallback")
-            return self._get_fallback_news(limit)
+            print(f"Error in get_latest_news: {e}")
+            return self.cache.get('news', self._get_fallback_news())[:limit]
     
-    def _get_moneycontrol_news(self, category='latest', limit=15):
-        """Your original MoneyControl logic"""
+    def _get_newsapi_news(self, limit=15):
+        """Get fresh news from NewsAPI (your paid service)"""
         try:
-            feed_url = self.rss_feeds.get(category, self.rss_feeds['latest'])
-            feed = feedparser.parse(feed_url)
+            # NewsAPI endpoint for business news
+            url = "https://newsapi.org/v2/top-headlines"
+            params = {
+                'category': 'business',
+                'language': 'en',
+                'pageSize': limit,
+                'apiKey': self.newsapi_key
+            }
             
+            response = requests.get(url, params=params, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data['status'] == 'ok' and data['articles']:
+                    return self._format_newsapi_articles(data['articles'])
+                else:
+                    print(f"NewsAPI returned no articles: {data.get('message', 'Unknown error')}")
+            else:
+                print(f"NewsAPI error: {response.status_code} - {response.text}")
+                
+        except Exception as e:
+            print(f"NewsAPI request failed: {e}")
+        
+        return None
+    
+    def _format_newsapi_articles(self, articles):
+        """Format NewsAPI articles to our standard format"""
+        formatted_news = []
+        
+        for article in articles:
+            # Only include articles from last 24 hours
+            published_at = article.get('publishedAt', '')
+            if published_at and not self._is_within_24_hours(published_at):
+                continue
+                
+            formatted_article = {
+                'id': f"newsapi_{hash(article['url'])}",
+                'title': article.get('title', 'Financial News'),
+                'link': article.get('url', '#'),
+                'summary': article.get('description', 'Latest financial news update.'),
+                'published': self._format_iso_date(published_at),
+                'source': article.get('source', {}).get('name', 'NewsAPI'),
+                'category': 'business',
+                'scraped_at': datetime.now().isoformat(),
+                'timestamp': time.time()
+            }
+            formatted_news.append(formatted_article)
+        
+        return formatted_news
+    
+    def _is_within_24_hours(self, iso_date_string):
+        """Check if article is from last 24 hours"""
+        try:
+            article_date = datetime.fromisoformat(iso_date_string.replace('Z', '+00:00'))
+            return (datetime.now() - article_date) < timedelta(hours=24)
+        except:
+            return True  # If we can't parse, include it
+    
+    def _format_iso_date(self, iso_date_string):
+        """Convert ISO date to RSS format"""
+        try:
+            dt = datetime.fromisoformat(iso_date_string.replace('Z', '+00:00'))
+            return dt.strftime('%a, %d %b %Y %H:%M:%S GMT')
+        except:
+            return datetime.now().strftime('%a, %d %b %Y %H:%M:%S GMT')
+    
+    def _get_rss_news(self, limit=15):
+        """Fallback to RSS feeds"""
+        all_news = []
+        
+        for feed_url in self.fallback_feeds:
+            if len(all_news) >= limit:
+                break
+                
+            try:
+                feed_news = self._fetch_rss_feed(feed_url, 5)
+                if feed_news:
+                    all_news.extend(feed_news)
+                    time.sleep(0.5)
+            except Exception as e:
+                print(f"RSS feed error {feed_url}: {e}")
+                continue
+        
+        return self._process_news(all_news, limit)
+    
+    def _fetch_rss_feed(self, feed_url, limit=5):
+        """Fetch from RSS feed"""
+        try:
+            feed = feedparser.parse(feed_url)
             news_items = []
             
             for entry in feed.entries[:limit]:
                 news_item = {
-                    'id': entry.get('id', entry.link),
+                    'id': f"rss_{hash(entry.link)}",
                     'title': entry.title,
                     'link': entry.link,
-                    'summary': entry.get('summary', ''),
-                    'published': entry.get('published', ''),
-                    'source': 'MoneyControl',
-                    'category': category,
-                    'scraped_at': datetime.now().isoformat()
+                    'summary': entry.get('summary', 'Financial market update'),
+                    'published': entry.get('published', datetime.now().strftime('%a, %d %b %Y %H:%M:%S GMT')),
+                    'source': self._get_source_name(feed_url),
+                    'category': 'markets',
+                    'scraped_at': datetime.now().isoformat(),
+                    'timestamp': time.time()
                 }
                 news_items.append(news_item)
             
             return news_items
-            
         except Exception as e:
-            print(f"Error fetching MoneyControl news from {category}: {e}")
+            print(f"Error parsing RSS {feed_url}: {e}")
             return []
     
-    def _get_fallback_news(self, limit=10):
-        """Fallback to other news sources if MoneyControl fails"""
-        try:
-            fallback_news = []
-            
-            # Try Yahoo Finance
-            try:
-                yahoo_feed = feedparser.parse(self.rss_feeds['yahoo_finance'])
-                for entry in yahoo_feed.entries[:5]:
-                    news_item = {
-                        'id': entry.get('id', entry.link),
-                        'title': entry.title,
-                        'link': entry.link,
-                        'summary': entry.get('summary', entry.title),
-                        'published': entry.get('published', ''),
-                        'source': 'Yahoo Finance',
-                        'category': 'markets',
-                        'scraped_at': datetime.now().isoformat()
-                    }
-                    fallback_news.append(news_item)
-            except Exception as e:
-                print(f"Yahoo Finance fallback failed: {e}")
-            
-            # Try Google News search for investing
-            try:
-                investing_feed = feedparser.parse(self.rss_feeds['investing'])
-                for entry in investing_feed.entries[:5]:
-                    news_item = {
-                        'id': entry.get('id', entry.link),
-                        'title': entry.title,
-                        'link': entry.link,
-                        'summary': entry.get('summary', 'Latest market updates'),
-                        'published': entry.get('published', ''),
-                        'source': 'Google News',
-                        'category': 'markets',
-                        'scraped_at': datetime.now().isoformat()
-                    }
-                    fallback_news.append(news_item)
-            except Exception as e:
-                print(f"Investing news fallback failed: {e}")
-            
-            return fallback_news[:limit]
-            
-        except Exception as e:
-            print(f"All fallback sources failed: {e}")
-            return []
-    
-    def _is_recent_news(self, news_items, max_hours_old=48):
-        """Check if news is reasonably recent"""
-        if not news_items:
-            return False
-        
-        try:
-            # Check the first few items for recency
-            for item in news_items[:3]:
-                published_str = item.get('published', '')
-                if published_str:
-                    # Simple check - if it contains today's or yesterday's date
-                    today = datetime.now().strftime('%d %b')
-                    yesterday = (datetime.now() - timedelta(days=1)).strftime('%d %b')
-                    if today in published_str or yesterday in published_str:
-                        return True
-            return False
-        except:
-            return True  # If we can't determine, assume it's okay
-    
-    def _remove_duplicates(self, news_items):
-        """Remove obvious duplicates"""
-        seen_titles = set()
+    def _process_news(self, news_items, limit):
+        """Remove duplicates and sort"""
         unique_news = []
+        seen_titles = set()
         
         for item in news_items:
-            title_lower = item['title'].lower()
-            if title_lower not in seen_titles:
-                seen_titles.add(title_lower)
+            title_key = item['title'].lower()[:40]
+            if title_key not in seen_titles:
+                seen_titles.add(title_key)
                 unique_news.append(item)
         
-        return unique_news
+        # Sort by timestamp (newest first)
+        unique_news.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
+        return unique_news[:limit]
     
-    # Keep all your existing methods exactly as they were
+    def _get_source_name(self, feed_url):
+        """Get source name from URL"""
+        if 'yahoo' in feed_url:
+            return 'Yahoo Finance'
+        elif 'investing' in feed_url:
+            return 'Investing.com'
+        elif 'marketwatch' in feed_url:
+            return 'MarketWatch'
+        else:
+            return 'Financial News'
+    
+    def _get_fallback_news(self):
+        """Generate fallback news"""
+        current_time = datetime.now().strftime('%a, %d %b %Y %H:%M:%S GMT')
+        
+        return [{
+            'id': f"fallback_{i}",
+            'title': f"Financial Market Update {i+1}",
+            'link': '#',
+            'summary': 'Latest financial news and market updates',
+            'published': current_time,
+            'source': 'Market News',
+            'category': 'markets',
+            'scraped_at': datetime.now().isoformat(),
+            'timestamp': time.time()
+        } for i in range(10)]
+    
+    # Keep existing method signatures
+    def get_news(self, category='latest', limit=15):
+        return self.get_latest_news(limit)
+    
     def get_market_news(self, limit=10):
-        """Get market-specific news"""
-        return self.get_news(category='markets', limit=limit)
+        return self.get_latest_news(limit)
     
     def get_all_news(self, limit=20):
-        """Get news from all categories"""
-        all_news = []
-        for category in ['latest', 'markets', 'business']:
-            news = self.get_news(category, limit=5)
-            all_news.extend(news)
-        
-        # Sort by published date (newest first)
-        all_news.sort(key=lambda x: x.get('published', ''), reverse=True)
-        return all_news[:limit]
+        return self.get_latest_news(limit)
