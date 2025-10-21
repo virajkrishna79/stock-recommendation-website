@@ -5,6 +5,8 @@ from services.news_service import NewsService
 from services.recommendation_service import RecommendationService
 from services.email_service import EmailService
 import logging
+from apscheduler.schedulers.background import BackgroundScheduler
+import atexit
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -17,6 +19,29 @@ api_bp = Blueprint('api', __name__)
 # Initialize services
 stock_service = StockService()
 news_service = NewsService()
+
+# Background scheduler to refresh news cache regularly
+_scheduler = BackgroundScheduler(daemon=True)
+
+def _refresh_news_cache():
+    try:
+        logger.info("Refreshing news cache via scheduler...")
+        news_service.get_latest_news(limit=20, force=True)
+        logger.info("News cache refresh completed")
+    except Exception as e:
+        logger.error(f"News cache refresh failed: {e}")
+
+# Start the scheduler only once
+try:
+    if not _scheduler.running:
+        # Refresh hourly to keep feed fresh daily
+        _scheduler.add_job(_refresh_news_cache, 'interval', hours=1, id='refresh_news', replace_existing=True)
+        _scheduler.start()
+        # Trigger once on startup
+        _refresh_news_cache()
+        atexit.register(lambda: _scheduler.shutdown(wait=False))
+except Exception as _e:
+    logger.warning(f"Scheduler did not start: {_e}")
 recommendation_service = RecommendationService()
 email_service = EmailService()
 
@@ -129,6 +154,16 @@ def get_news():
             'success': False,
             'error': 'Failed to fetch news'
         }), 500
+
+@api_bp.route('/news/refresh', methods=['POST'])
+def refresh_news_now():
+    """Force refresh the news cache immediately"""
+    try:
+        _refresh_news_cache()
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        logger.error(f"Manual news refresh failed: {e}")
+        return jsonify({'success': False, 'error': 'Failed to refresh'}), 500
 
 @api_bp.route('/recommendations', methods=['GET'])
 def get_recommendations():
