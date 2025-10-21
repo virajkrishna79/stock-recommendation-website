@@ -12,6 +12,11 @@ def create_app():
     # Load configuration
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///stock_recommendations.db')
+    # Railway provides DATABASE_URL for Postgres. Ensure sqlite path is absolute when using file.
+    if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite:///'):
+        db_path = app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')
+        abs_path = os.path.join(os.path.dirname(__file__), db_path)
+        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{abs_path}'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     # Initialize extensions with app
@@ -23,9 +28,12 @@ def create_app():
     app.register_blueprint(main_bp)
     app.register_blueprint(api_bp, url_prefix='/api')
     
-    # Create tables
-    with app.app_context():
-        db.create_all()
+    # Create tables (best-effort, ignore failures in read-only envs)
+    try:
+        with app.app_context():
+            db.create_all()
+    except Exception:
+        pass
     
     return app
 

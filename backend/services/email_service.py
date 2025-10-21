@@ -5,8 +5,15 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 import os
 from typing import List, Dict, Any
-from models import User, StockRecommendation
-from app import db
+try:
+    from backend.models import User, StockRecommendation
+except Exception:
+    from models import User, StockRecommendation
+
+try:
+    from backend.app import db
+except Exception:
+    from app import db
 
 logger = logging.getLogger(__name__)
 

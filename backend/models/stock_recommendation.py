@@ -1,4 +1,7 @@
-from app import db
+try:
+    from backend.app import db
+except Exception:
+    from app import db
 from datetime import datetime
 
 class StockRecommendation(db.Model):

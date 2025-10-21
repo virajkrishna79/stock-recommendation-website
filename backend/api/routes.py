@@ -1,9 +1,19 @@
-from flask import Blueprint, request, jsonify, render_template, current_app
-from models import User, StockRecommendation, NewsArticle
-from services.stock_service import StockService
-from services.news_service import NewsService
-from services.recommendation_service import RecommendationService
-from services.email_service import EmailService
+from flask import Blueprint, request, jsonify, current_app, redirect
+try:
+    from backend.models import User, StockRecommendation, NewsArticle
+except Exception:  # pragma: no cover - fallback when running from backend cwd
+    from models import User, StockRecommendation, NewsArticle
+
+try:
+    from backend.services.stock_service import StockService
+    from backend.services.news_service import NewsService
+    from backend.services.recommendation_service import RecommendationService
+    from backend.services.email_service import EmailService
+except Exception:  # pragma: no cover - fallback when running from backend cwd
+    from services.stock_service import StockService
+    from services.news_service import NewsService
+    from services.recommendation_service import RecommendationService
+    from services.email_service import EmailService
 import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
@@ -31,14 +41,12 @@ def _refresh_news_cache():
     except Exception as e:
         logger.error(f"News cache refresh failed: {e}")
 
-# Start the scheduler only once
+# Start the scheduler only once (avoid heavy work during import/startup)
 try:
     if not _scheduler.running:
         # Refresh hourly to keep feed fresh daily
         _scheduler.add_job(_refresh_news_cache, 'interval', hours=1, id='refresh_news', replace_existing=True)
         _scheduler.start()
-        # Trigger once on startup
-        _refresh_news_cache()
         atexit.register(lambda: _scheduler.shutdown(wait=False))
 except Exception as _e:
     logger.warning(f"Scheduler did not start: {_e}")
@@ -46,28 +54,30 @@ recommendation_service = RecommendationService()
 email_service = EmailService()
 
 def get_db():
-    """Get database instance without circular imports"""
-    from flask import current_app
-    from flask_sqlalchemy import SQLAlchemy
-    return current_app.extensions['sqlalchemy'].db
+    """Get SQLAlchemy db instance safely without circular imports."""
+    try:
+        from flask_sqlalchemy import SQLAlchemy  # type: ignore
+        ext = current_app.extensions.get('sqlalchemy')
+        # In Flask-SQLAlchemy 3.x, the extension object itself is the db instance
+        if isinstance(ext, SQLAlchemy):
+            return ext
+    except Exception:
+        pass
+    # Fallback import
+    from app import db as app_db  # type: ignore
+    return app_db
 
 @main_bp.route('/')
 def index():
-    """Main homepage with news and subscription form"""
-    try:
-        # Get latest news
-        news = news_service.get_latest_news(limit=10)
-        return render_template('index.html', news=news)
-    except Exception as e:
-        logger.error(f"Error loading homepage: {e}")
-        return render_template('index.html', news=[])
+    """Redirect to external frontend (Netlify)."""
+    return redirect('https://inspiring-jelly-668573.netlify.app/', code=302)
 
 @main_bp.route('/about')
 def about():
-    """About page"""
-    return render_template('about.html')
+    return jsonify({'message': 'Stock Recommendation API', 'frontend': 'https://inspiring-jelly-668573.netlify.app/'})
 
 @api_bp.route('/subscribe', methods=['POST'])
+@api_bp.route('/newsletter/subscribe', methods=['POST'])
 def subscribe():
     """Subscribe user to stock recommendations"""
     try:
@@ -75,7 +85,7 @@ def subscribe():
         email = data.get('email')
         
         if not email:
-            return jsonify({'error': 'Email is required'}), 400
+            return jsonify({'success': False, 'error': 'Email is required'}), 400
         
         # Get db instance
         db = get_db()
@@ -84,11 +94,11 @@ def subscribe():
         existing_user = User.query.filter_by(email=email).first()
         if existing_user:
             if existing_user.is_active:
-                return jsonify({'message': 'Email already subscribed'}), 200
+                return jsonify({'success': True, 'message': 'Email already subscribed'}), 200
             else:
                 existing_user.is_active = True
                 db.session.commit()
-                return jsonify({'message': 'Subscription reactivated successfully'}), 200
+                return jsonify({'success': True, 'message': 'Subscription reactivated successfully'}), 200
         
         # Create new user
         new_user = User(email=email)
@@ -101,14 +111,18 @@ def subscribe():
         except Exception as e:
             logger.warning(f"Failed to send confirmation email: {e}")
         
-        return jsonify({'message': 'Subscription successful!'}), 201
+        return jsonify({'success': True, 'message': 'Subscription successful!'}), 201
         
     except Exception as e:
         logger.error(f"Error in subscription: {e}")
-        db.session.rollback()
-        return jsonify({'error': 'Internal server error'}), 500
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @api_bp.route('/unsubscribe', methods=['POST'])
+@api_bp.route('/newsletter/unsubscribe', methods=['POST'])
 def unsubscribe():
     """Unsubscribe user from stock recommendations"""
     try:
@@ -116,7 +130,7 @@ def unsubscribe():
         email = data.get('email')
         
         if not email:
-            return jsonify({'error': 'Email is required'}), 400
+            return jsonify({'success': False, 'error': 'Email is required'}), 400
         
         # Get db instance
         db = get_db()
@@ -125,14 +139,17 @@ def unsubscribe():
         if user:
             user.is_active = False
             db.session.commit()
-            return jsonify({'message': 'Unsubscribed successfully'}), 200
+            return jsonify({'success': True, 'message': 'Unsubscribed successfully'}), 200
         else:
-            return jsonify({'error': 'Email not found'}), 404
+            return jsonify({'success': False, 'error': 'Email not found'}), 404
             
     except Exception as e:
         logger.error(f"Error in unsubscription: {e}")
-        db.session.rollback()
-        return jsonify({'error': 'Internal server error'}), 500
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @api_bp.route('/news', methods=['GET'])
 def get_news():
