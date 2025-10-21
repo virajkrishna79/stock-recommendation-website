@@ -257,3 +257,18 @@ class NewsService:
     
     def get_all_news(self, limit=20):
         return self.get_latest_news(limit)
+
+    def get_news_for_symbol(self, symbol: str, limit: int = 10):
+        """Return news items filtered by symbol keyword.
+        Fallbacks to latest news if no matches.
+        """
+        try:
+            symbol_upper = (symbol or '').upper()
+            latest = self.get_latest_news(limit=50)
+            filtered = [
+                item for item in latest
+                if symbol_upper in (item.get('title', '') + ' ' + item.get('summary', '')).upper()
+            ]
+            return (filtered or latest)[:limit]
+        except Exception:
+            return self.get_latest_news(limit)

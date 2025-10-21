@@ -81,7 +81,7 @@ class StockService:
                 symbol = f"{symbol}.NS"
             
             ticker = yf.Ticker(symbol)
-            info = ticker.info
+            # Accessing ticker.info can be slow/unreliable; avoid it
             
             # Get current price
             hist = ticker.history(period="5d")

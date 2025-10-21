@@ -1,12 +1,29 @@
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
-from models import StockRecommendation
-from app import db
-from services.stock_service import StockService
-from services.news_service import NewsService
-from ml_models.sentiment_analyzer import SentimentAnalyzer
-from ml_models.price_predictor import PricePredictor
+try:
+    from backend.models import StockRecommendation
+except Exception:
+    from models import StockRecommendation
+
+try:
+    from backend.app import db
+except Exception:
+    from app import db
+
+try:
+    from backend.services.stock_service import StockService
+    from backend.services.news_service import NewsService
+except Exception:
+    from services.stock_service import StockService
+    from services.news_service import NewsService
+
+try:
+    from backend.ml_models.sentiment_analyzer import SentimentAnalyzer
+    from backend.ml_models.price_predictor import PricePredictor
+except Exception:
+    from ml_models.sentiment_analyzer import SentimentAnalyzer
+    from ml_models.price_predictor import PricePredictor
 
 logger = logging.getLogger(__name__)
 
